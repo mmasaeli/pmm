@@ -62,27 +62,34 @@ class xml(object):
         tree = parse(self.tempname)
         root = tree.getroot()
         for part in root.findall('part'):
+            #Reading the part:
             for measure in part.findall('measure'):
+                #Reading one Measure
                 data = []
                 rep = measure.find('attributes/measure-style/measure-repeat')
                 if rep is not None and rep.attrib['type'].lower() != 'start':
+                    #if it is REPEAT (not the box type)
                     c = int(rep.text)
                     block = []
                     for i in range(len(self.measures) - c, len(self.measures)):
                         block.append(self.measures[i])
                     self.measures = self.measures + block
-                else:  # Here we load the notes
+                else:
+                    # Here we load the notes
                     for inthebox in measure.findall('DoletSibelius-Unexported-box'):
+                        #reading all the BOX REPEATS:
                         rep = inthebox.find('direction/direction-type/words')
                         if rep is not None:
                             rep = rep.text
                         for i in range(0, int(rep)):
                             for note in inthebox.findall('note'):
+                                #Notes in the box
                                 new = self._readNote(note)
                                 if new is None:
                                     continue
                                 data.append(new)
                     for note in measure.findall('note'):
+                        #regular notes:
                         new = self._readNote(note)
                         if new is None:
                             continue
