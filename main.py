@@ -10,4 +10,6 @@ if __name__ == '__main__':
     pass
     filename = ('/home/masood/workspace/musicMining/music/homayoun/test/2.xml')
     a = xml(filename)
-    print((a.measures))
+    a.count()
+    print(a.allCounted)
+    a.plot()
