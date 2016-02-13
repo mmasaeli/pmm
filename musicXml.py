@@ -21,13 +21,16 @@ class xml(object):
     allCounted = {}
 
     def plot(self):
-        import numpy as np
         import matplotlib.pyplot as plt
         fig1 = plt.figure()
         data = []
+        times = []
+        time = 0
         for note in self.sortedNotes:
             data = data + [note['jump']]
-            l = plt.plot(data)
+            time = time + note['duration']
+            times = times + [time]
+        plt.plot(times, data)
         plt.show()
 
     def count(self):
@@ -80,12 +83,11 @@ class xml(object):
         new = {'duration': int(duration), 'step': step,
             'lineNumber': float(linenumber)}
         if not rest:
+            self._accidental = self._getAccidentalOfFirstNote(note)
             pitch = note.find('pitch')
             step = pitch.find('step').text
             octave = pitch.find('octave').text
-            accidental = note.find('accidental')
-            if accidental is not None:
-                accidental = accidental.text
+            accidental = self._setAccidental(note)
             new['octave'] = int(octave)
             new['accidental'] = accidental
             new['step'] = step
@@ -107,8 +109,38 @@ class xml(object):
             self.sortedNotes[i]['jump'] = jump
             lastNote = self.sortedNotes[i]
 
-    def _setAccidental(self, note, lastAcc):
+    def _setAccidental(self, note):
+        accidental = note.find('accidental')
+        if accidental is not None:
+            #TODO identify BEKAAR and set lastAcc
+            #if accidental
+            return accidental.text
+        #TODO: must get the numbers for notes
+        #here
+        pitch = note.find('pitch')
+        if self._lastAcc is not None and pitch in self._lastAcc:
+            return self._lastAcc[pitch]
+        if self._accidental is not None and pitch in self._accidental:
+            return self._accidental[pitch]
         return 'natural'
+
+    def _getAccidentalOfFirstNote(self, note):
+        notation = note.find('notations')
+        if notation is None:
+            return None
+        accid = dict()
+        x = None
+        y = None
+        inv_conv = {v: k for k, v in list(self._conv.items())}
+        for accMark in notation.findall('accidental-mark'):
+            if 'relative-x' in accMark.attrib:
+                x = int(accMark.attrib['relative-x'])
+            if 'default-y' in accMark.attrib:
+                y = int(accMark.attrib['default-y'])
+            if x is not None and y is not None:
+                n = int((y - 5) / 5) % 7
+                accid[inv_conv[n]] = accMark.text
+        return accid
 
     def _calcRepeatedNumbers(self, measure, rep):
         minLine = float("Inf")
@@ -127,26 +159,35 @@ class xml(object):
     def _calcLineNumber(self, lineNumber, i, params):
         return params[1] + i * params[2] + params[3] * (lineNumber - params[0])
 
+    _accidental = dict()
+    _lastAcc = None
+
     def loadNotes(self):
         self._preProcessFile()
         from defusedxml.ElementTree import parse
         tree = parse(self.tempname)
         root = tree.getroot()
         for part in root.findall('part'):
+            repCount = 0
             #Reading the part:
             for measure in part.findall('measure'):
+                self._lastAcc = None
                 #Reading one Measure
                 data = []
-                accidental = None
+                if repCount > 0:
+                    repCount = repCount + 1
                 rep = measure.find('attributes/measure-style/measure-repeat')
-                if rep is not None and rep.attrib['type'].lower() == 'stop':
-                    #if it is REPEAT (not the box type)
-                    c = int(rep.text)
-                    block = []
-                    for i in range(len(self.measures) - c, len(self.measures)):
-                        block.append(self.measures[i])
-                    self.measures = self.measures + block
+                if rep is not None and rep.attrib['type'].lower() == 'start':
+                    repCount = 1
                 else:
+                    if rep is not None and rep.attrib['type'].lower() == 'stop':
+                        c = int(rep.text)
+                        block = []
+                        repCount = repCount - 1
+                        for i in range(len(self.measures) - repCount, len(self.measures)):
+                            block.append(self.measures[i])
+                        self.measures = self.measures + block
+                        repCount = 0
                     # Here we load the notes
                     for inthebox in measure.findall('DoletSibelius-Unexported-box'):
                         #reading all the BOX REPEATS:
@@ -166,9 +207,6 @@ class xml(object):
                                 new = self._readNote(note)
                                 if new is None:
                                     continue
-                                accidental = self._setAccidental(note,
-                                    accidental)
-                                new['accidental'] = accidental
                                 if i == 0:
                                     if new['lineNumber'] < minLine:
                                         minLine = new['lineNumber']
@@ -183,9 +221,6 @@ class xml(object):
                         new = self._readNote(note)
                         if new is None:
                             continue
-                        accidental = self._setAccidental(note,
-                            accidental)
-                        new['accidental'] = accidental
                         data.append(new)
                 if len(data) > 0:
                     self.measures.append(data)
