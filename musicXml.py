@@ -3,17 +3,16 @@ Created on Jan 17, 2016
 
 @author: masood
 '''
+from theRoot import root
 
-class xml(object):
+
+class xml(root):
 
     def __init__(self, filename):
-        self._inv_conv = {v: k for k, v in list(self._conv.items())}
         self.filename = filename
-        self.tempname = filename + '~.xml'
+        self.tempname = filename + '~'
         return self.readFile()
 
-    _conv = {'F': 0, 'G': 1, 'A': 2, 'B': 3, 'C': 4, 'D': 5, 'E': 6}
-    _inv_conv = None
     _accidentals = {'sharp': 0.5, 'flat': -0.5, 'quarter-flat': -0.25,
         'natural': 0, 'quarter-sharp': 0.25}
     measures = []
@@ -21,26 +20,40 @@ class xml(object):
     tempname = ''
     sortedNotes = []
     allCounted = {}
+    allDurations = {}
     _accidental = None
     _lastAcc = None
+    jumpPlotData = []
+    notePlotData = []
+    timePlotData = []
+    otherPlotData = {}
+    plotData = {}
 
-    def plot(self):
-        import matplotlib.pyplot as plt
-        fig1 = plt.figure()
-        data = []
+    def makePlotData(self):
+        self.jumpPlotData = []
         times = []
         time = 0
-        notes =[]
+        theMin = float('Inf')
+        theMax = -theMin
+        self.notePlotData = []
         for note in self.sortedNotes:
-            data = data + [note['jump']]
+            if note['step'] is None:
+                continue
+            self.jumpPlotData = self.jumpPlotData + [note['jump']]
             time = time + note['duration']
             times = times + [time]
-            if note['step'] is None:
-                notes = notes + [None]
-            else:
-                notes = notes + [self._conv[note['step']]]
-        plt.plot(times, data, times, notes, 'r')
-        plt.show()
+            theNote = self.noteConvJump[note['step']]
+            theNote = theNote + 7 * (note['octave'] - 4)
+            theNote = theNote + self._accidentals[note['accidental']]
+            theMax = theMax if theMax > theNote else theNote
+            theMin = theMin if theMin < theNote else theNote
+            self.notePlotData = self.notePlotData + [theNote]
+        for i in range(0, len(times)):
+            self.plotData[times[i]] = [self.notePlotData[i],
+                self.jumpPlotData[i]]
+        self.otherPlotData['max'] = theMax
+        self.otherPlotData['min'] = theMin
+        self.timePlotData = times
 
     def count(self):
         for note in self.sortedNotes:
@@ -49,19 +62,19 @@ class xml(object):
                 key = 'rest'
             if key not in self.allCounted:
                 self.allCounted[key] = 1
-                self.allCounted[key + '-duration'] = note['duration']
+                self.allDurations[key] = note['duration']
             else:
                 self.allCounted[key] = self.allCounted[key] + 1
-                self.allCounted[key + '-duration'] = self.allCounted[key + '-duration'] + note['duration']
+                self.allDurations[key] = self.allDurations[key] + note['duration']
             if key != 'rest' and note['accidental'] is not None:
                 accid = str(note['accidental'])
                 newkey = key + "_" + accid
                 if newkey not in self.allCounted:
                     self.allCounted[newkey] = 1
-                    self.allCounted[newkey + '-duration'] = note['duration']
+                    self.allDurations[newkey] = note['duration']
                 else:
                     self.allCounted[newkey] = self.allCounted[newkey] + 1
-                    self.allCounted[newkey + '-duration'] = self.allCounted[newkey + '-duration'] + note['duration']
+                    self.allDurations[newkey] = self.allDurations[newkey] + note['duration']
 
     def _preProcessFile(self):
         counter = 0
@@ -97,7 +110,6 @@ class xml(object):
             step = pitch.find('step').text
             octave = pitch.find('octave').text
             accidental = self._setAccidental(note)
-            print(accidental)
             new['octave'] = int(octave)
             new['accidental'] = accidental
             new['step'] = step
@@ -150,7 +162,7 @@ class xml(object):
                 y = int(accMark.attrib['default-y'])
             if x is not None and x < 0 and y is not None:
                 n = int(y / 5) % 7
-                accid[self._inv_conv[n]] = accMark.text
+                accid[self.invConv[n]] = accMark.text
         return accid
 
     def _calcRepeatedNumbers(self, measure, rep):
@@ -183,8 +195,6 @@ class xml(object):
                 self._accidental = self._getAccidentalOfFirstNote(measure.find('note'))
                 #Reading one Measure
                 data = []
-                if repCount > 0:
-                    repCount = repCount + 1
                 rep = measure.find('attributes/measure-style/measure-repeat')
                 if rep is not None and rep.attrib['type'].lower() == 'start':
                     repCount = 1
@@ -197,6 +207,9 @@ class xml(object):
                             block.append(self.measures[i])
                         self.measures = self.measures + block
                         repCount = 0
+                    if repCount > 0:
+                        repCount = repCount + 1
+                        continue
                     # Here we load the notes
                     for inthebox in measure.findall('DoletSibelius-Unexported-box'):
                         #reading all the BOX REPEATS:
@@ -242,8 +255,8 @@ class xml(object):
             return None
         octave1 = fromnote['octave']
         octave2 = tonote['octave']
-        step1 = self._conv[fromnote['step']]
-        step2 = self._conv[tonote['step']]
+        step1 = self.noteConvJump[fromnote['step']]
+        step2 = self.noteConvJump[tonote['step']]
         if fromnote['accidental'] is not None:
             step1 = step1 + self._accidentals[fromnote['accidental']]
         if tonote['accidental'] is not None:
