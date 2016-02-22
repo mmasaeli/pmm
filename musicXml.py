@@ -7,18 +7,22 @@ Created on Jan 17, 2016
 class xml(object):
 
     def __init__(self, filename):
+        self._inv_conv = {v: k for k, v in list(self._conv.items())}
         self.filename = filename
         self.tempname = filename + '~.xml'
         return self.readFile()
 
-    _conv = {'C': 0, 'D': 1, 'E': 2, 'F': 3, 'G': 4, 'A': 5, 'B': 6}
+    _conv = {'F': 0, 'G': 1, 'A': 2, 'B': 3, 'C': 4, 'D': 5, 'E': 6}
+    _inv_conv = None
     _accidentals = {'sharp': 0.5, 'flat': -0.5, 'quarter-flat': -0.25,
-        'natural': 0}
+        'natural': 0, 'quarter-sharp': 0.25}
     measures = []
     filename = ''
     tempname = ''
     sortedNotes = []
     allCounted = {}
+    _accidental = None
+    _lastAcc = None
 
     def plot(self):
         import matplotlib.pyplot as plt
@@ -26,11 +30,16 @@ class xml(object):
         data = []
         times = []
         time = 0
+        notes =[]
         for note in self.sortedNotes:
             data = data + [note['jump']]
             time = time + note['duration']
             times = times + [time]
-        plt.plot(times, data)
+            if note['step'] is None:
+                notes = notes + [None]
+            else:
+                notes = notes + [self._conv[note['step']]]
+        plt.plot(times, data, times, notes, 'r')
         plt.show()
 
     def count(self):
@@ -80,14 +89,15 @@ class xml(object):
         rest = note.find('rest') is not None
         step = None
         linenumber = note.attrib['line-number']
-        new = {'duration': int(duration), 'step': step,
+        #TODO:make sure that 768 is always for black note
+        new = {'duration': int(duration) / 768, 'step': step,
             'lineNumber': float(linenumber)}
         if not rest:
-            self._accidental = self._getAccidentalOfFirstNote(note)
             pitch = note.find('pitch')
             step = pitch.find('step').text
             octave = pitch.find('octave').text
             accidental = self._setAccidental(note)
+            print(accidental)
             new['octave'] = int(octave)
             new['accidental'] = accidental
             new['step'] = step
@@ -111,35 +121,36 @@ class xml(object):
 
     def _setAccidental(self, note):
         accidental = note.find('accidental')
-        if accidental is not None:
-            #TODO identify BEKAAR and set lastAcc
-            #if accidental
-            return accidental.text
-        #TODO: must get the numbers for notes
-        #here
         pitch = note.find('pitch')
-        if self._lastAcc is not None and pitch in self._lastAcc:
-            return self._lastAcc[pitch]
-        if self._accidental is not None and pitch in self._accidental:
-            return self._accidental[pitch]
+        step = pitch.find('step').text
+        if accidental is not None:
+            if self._lastAcc is None:
+                self._lastAcc = dict()
+            self._lastAcc[step] = accidental.text
+            return accidental.text
+        if self._lastAcc is not None and step in self._lastAcc:
+            return self._lastAcc[step]
+        if self._accidental is not None and step in self._accidental:
+            return self._accidental[step]
         return 'natural'
 
     def _getAccidentalOfFirstNote(self, note):
+        if note is None:
+            return None
         notation = note.find('notations')
         if notation is None:
             return None
         accid = dict()
         x = None
         y = None
-        inv_conv = {v: k for k, v in list(self._conv.items())}
         for accMark in notation.findall('accidental-mark'):
             if 'relative-x' in accMark.attrib:
                 x = int(accMark.attrib['relative-x'])
             if 'default-y' in accMark.attrib:
                 y = int(accMark.attrib['default-y'])
-            if x is not None and y is not None:
-                n = int((y - 5) / 5) % 7
-                accid[inv_conv[n]] = accMark.text
+            if x is not None and x < 0 and y is not None:
+                n = int(y / 5) % 7
+                accid[self._inv_conv[n]] = accMark.text
         return accid
 
     def _calcRepeatedNumbers(self, measure, rep):
@@ -159,9 +170,6 @@ class xml(object):
     def _calcLineNumber(self, lineNumber, i, params):
         return params[1] + i * params[2] + params[3] * (lineNumber - params[0])
 
-    _accidental = dict()
-    _lastAcc = None
-
     def loadNotes(self):
         self._preProcessFile()
         from defusedxml.ElementTree import parse
@@ -171,7 +179,8 @@ class xml(object):
             repCount = 0
             #Reading the part:
             for measure in part.findall('measure'):
-                self._lastAcc = None
+                self._lastAcc = dict()
+                self._accidental = self._getAccidentalOfFirstNote(measure.find('note'))
                 #Reading one Measure
                 data = []
                 if repCount > 0:
