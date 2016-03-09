@@ -84,7 +84,8 @@ class xmls(root):
         od = collections.OrderedDict(sorted(self.plotData.items()))
         for k in od:
             self.plotData[k][0] = self.plotData[k][0] / self.plotData[k][2]
-            self.plotData[k][1] = self.plotData[k][1] / self.plotData[k][2]
+            if self.plotData[k][1] is not None:
+                self.plotData[k][1] = self.plotData[k][1] / self.plotData[k][2]
             self.timePlotData.append(k)
             self.notePlotData.append(self.plotData[k][0])
             self.jumpPlotData.append(self.plotData[k][1])
